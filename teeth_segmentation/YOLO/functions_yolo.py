@@ -17,6 +17,7 @@ from typing import Dict, List, Tuple
 import shutil
 
 import torch
+from ultralytics import YOLO
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
