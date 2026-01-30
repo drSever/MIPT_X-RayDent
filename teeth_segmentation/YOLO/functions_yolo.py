@@ -2,6 +2,26 @@
 # Функции для решения задачи сегментации зубов на ортопантомогаммах с использованием YOLO
 #########################################################################################
 
+import os
+import glob
+from pathlib import Path
+import json
+from google.colab import drive
+import numpy as np
+import pandas as pd
+import cv2
+from tqdm.notebook import tqdm
+import zipfile
+import random
+from typing import Dict, List, Tuple
+import shutil
+
+import torch
+
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib import colormaps
+
 ### Фиксация SEED ###
 
 def set_seed(seed):
