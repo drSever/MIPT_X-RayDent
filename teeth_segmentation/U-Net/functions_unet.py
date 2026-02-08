@@ -2278,7 +2278,7 @@ def visualize_results(original_image, mask, class_names, save_path=None):
 
     return result_with_labels
 
-def inference_single_image(model_path, image_path, data_yaml_path, output_dir='output', device='cuda'):
+def inference_single_image(model_path, image_path, data_yaml_path, transform, output_dir='output', device='cuda'):
     """
     Инференс на одном изображении
     """
@@ -2302,9 +2302,6 @@ def inference_single_image(model_path, image_path, data_yaml_path, output_dir='o
     # Загружаем модель
     print("Загрузка модели...")
     model = load_model(model_path, num_classes, device)
-
-    # Подготавливаем трансформации
-    transform = get_val_transforms()
 
     # Предобработка изображения
     print("Предобработка изображения...")
