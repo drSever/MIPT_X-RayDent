@@ -2346,7 +2346,7 @@ def inference_single_image(model_path, image_path, data_yaml_path, transform, ou
 
     return mask, result_image
 
-def inference_multiple_images(model_path, image_dir, data_yaml_path, output_dir='output', device='cuda'):
+def inference_multiple_images(model_path, image_dir, data_yaml_path, transform, output_dir='output', device='cuda'):
     """
     Инференс на нескольких изображениях в директории
     """
@@ -2401,7 +2401,7 @@ def inference_multiple_images(model_path, image_dir, data_yaml_path, output_dir=
             img_output_dir.mkdir(parents=True, exist_ok=True)
 
             mask, result = inference_single_image(
-                model_path, image_path, data_yaml_path, img_output_dir, device
+                model_path, image_path, data_yaml_path, transform, img_output_dir, device
             )
             masks.append(mask)
             results.append(result)
