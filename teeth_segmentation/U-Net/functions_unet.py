@@ -1788,28 +1788,6 @@ def print_training_summary(history):
 
 ### Оценка на тестовой выборке ###
 
-def load_model(checkpoint_path, device, num_classes=33):
-    """
-    Загружает обученную модель из чекпоинта
-    """
-    model = UNet(in_channels=1, out_channels=num_classes).to(device)
-
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-
-    # Загружаем веса модели
-    if 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
-        print(f"Модель загружена из эпохи {checkpoint.get('epoch', 'N/A')}")
-        if 'best_val_dice' in checkpoint:
-            print(f"Best Val Dice: {checkpoint['best_val_dice']:.4f}")
-    else:
-        # Если чекпоинт содержит только веса модели
-        model.load_state_dict(checkpoint)
-
-    model.eval()
-    return model
-
-
 def visualize_predictions(images, masks, predictions, class_names, save_path=None, num_samples=4):
     """
     Визуализирует предсказания модели
@@ -1990,7 +1968,7 @@ def run_inference(model, test_loader, device, num_classes, class_names, save_dir
 
 def load_model(model_path, num_classes=33, device='cuda'):
     """
-    Загрузка обученной модели с исправлением для PyTorch 2.6+
+    Загрузка обученной модели 
     """
     # Определяем архитектуру модели (должна совпадать с обучением)
     class DoubleConv(torch.nn.Module):
@@ -2060,7 +2038,7 @@ def load_model(model_path, num_classes=33, device='cuda'):
     # Создаем модель и загружаем веса
     model = UNet(in_channels=1, out_channels=num_classes)
 
-    # Исправление для PyTorch 2.6+
+    
     try:
         # Пробуем загрузить с weights_only=False
         checkpoint = torch.load(model_path, map_location=device, weights_only=False)
