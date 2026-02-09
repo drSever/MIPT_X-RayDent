@@ -1970,69 +1970,122 @@ def load_model(model_path, num_classes=33, device='cuda'):
     """
     Загрузка обученной модели 
     """
-    # Определяем архитектуру модели (должна совпадать с обучением)
-    class DoubleConv(torch.nn.Module):
+    # Определяем архитектуру модели (как на обучении)
+    class DoubleConv(nn.Module):
+        """
+        Двойной сверточный блок, применяемый в U-Net.
+        Состоит из двух последовательных сверток 3x3, каждая из которых
+        сопровождается нормализацией по батчу и активацией ReLU.
+        """
         def __init__(self, in_channels, out_channels):
             super(DoubleConv, self).__init__()
-            self.conv = torch.nn.Sequential(
-                torch.nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-                torch.nn.BatchNorm2d(out_channels),
-                torch.nn.ReLU(inplace=True),
-                torch.nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-                torch.nn.BatchNorm2d(out_channels),
-                torch.nn.ReLU(inplace=True)
+            self.conv = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(inplace=True)
             )
 
         def forward(self, x):
             return self.conv(x)
 
-    class UNet(torch.nn.Module):
+    class UNet(nn.Module):
         def __init__(self, in_channels=1, out_channels=33, features=[64, 128, 256, 512]):
+            """
+            U-Net для instance-сегментации зубов на ортопантомограммах
+            Имеет классическую U-образную структуру: нисходящий путь, бутылочное горло и восходящий путь
+            Skip-connections соединяют соответствующие уровни нисходящего и восходящего путей
+            Args:
+                in_channels: 1 для grayscale рентгеновских снимков
+                out_channels: 33 (32 класса зубов + 1 фон)
+                features: количество каналов на каждом уровне
+            """
             super(UNet, self).__init__()
-            self.ups = torch.nn.ModuleList()
-            self.downs = torch.nn.ModuleList()
-            self.pool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
+            self.ups = nn.ModuleList() # Список для восходящих слоев
+            self.downs = nn.ModuleList() # Список для нисходящих слоев
+            self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-            # Down part of UNet
+            # Создание нисходящего пути (encoder)
             for feature in features:
+                # Добавляем двойной сверточный блок для текущего уровня
                 self.downs.append(DoubleConv(in_channels, feature))
+                # Обновляем in_channels для следующего уровня
                 in_channels = feature
 
             # Bottleneck
+            # Удваиваем количество каналов по сравнению с последним уровнем encoder'а
             self.bottleneck = DoubleConv(features[-1], features[-1]*2)
 
-            # Up part of UNet
+            # Создание восходящего пути (decoder)
             for feature in reversed(features):
+                # Транспонированная свертка для увеличения разрешения в 2 раза
                 self.ups.append(
-                    torch.nn.ConvTranspose2d(
-                        feature*2, feature, kernel_size=2, stride=2,
+                    nn.ConvTranspose2d(
+                        feature*2,  # Входные каналы
+                        feature,    # Выходные каналы
+                        kernel_size=2,
+                        stride=2,   # Увеличивает размерность в 2 раза
                     )
                 )
+                # Двойной сверточный блок после объединения с skip-connection
                 self.ups.append(DoubleConv(feature*2, feature))
 
-            self.final_conv = torch.nn.Conv2d(features[0], out_channels, kernel_size=1)
+            # Финальная свертка 1x1 для получения нужного количества классов
+            self.final_conv = nn.Conv2d(features[0], out_channels, kernel_size=1)
 
         def forward(self, x):
+            """
+            Прямой проход через U-Net.
+
+            Args:
+                x (torch.Tensor): Входной тензор формы [batch_size, 1, H, W]
+
+            Returns:
+                torch.Tensor: Выходной тензор формы [batch_size, 33, H, W]
+            """
+            # Список для хранения skip-connections
             skip_connections = []
 
+            # Нисходящий путь
             for down in self.downs:
+                # Применяем двойную свертку
                 x = down(x)
+                # Сохраняем результат для skip-connection
                 skip_connections.append(x)
+                # Применяем max-pooling для уменьшения разрешения
                 x = self.pool(x)
 
+            # Bottleneck (самый низкий уровень)
             x = self.bottleneck(x)
+
+            # Разворачиваем список skip-connections в обратном порядке
+            # для соответствия уровням восходящего пути
             skip_connections = skip_connections[::-1]
 
+            # Восходящий путь
+            # Идем с шагом 2, т.к. каждый уровень decoder'а состоит из двух слоев:
+            # 1) транспонированная свертка, 2) двойная свертка
             for idx in range(0, len(self.ups), 2):
+                # Транспонированная свертка для увеличения разрешения
                 x = self.ups[idx](x)
+
+                # Получаем соответствующую skip-connection
                 skip_connection = skip_connections[idx//2]
 
+                # Проверяем совпадение размерностей (может отличаться из-за округлений)
                 if x.shape != skip_connection.shape:
-                    x = torch.nn.functional.interpolate(x, size=skip_connection.shape[2:], mode='bilinear', align_corners=True)
+                    # Интерполяция для точного совпадения размеров
+                    x = F.interpolate(x, size=skip_connection.shape[2:], mode='bilinear', align_corners=True)
 
+                # Объединяем по каналам: skip-connection и выход транспонированной свертки
                 concat_skip = torch.cat((skip_connection, x), dim=1)
+
+                # Применяем двойную свертку к объединенному тензору
                 x = self.ups[idx+1](concat_skip)
 
+            # Финальная свертка для получения карты сегментации
             return self.final_conv(x)
 
     # Создаем модель и загружаем веса
