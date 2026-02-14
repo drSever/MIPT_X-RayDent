@@ -826,36 +826,155 @@ def run_inference(model, test_loader, device, num_classes, class_names, save_dir
 
     results = test_metrics.compute()
 
+    # Вывод результатов
     print("\n" + "="*60)
     print("РЕЗУЛЬТАТЫ ИНФЕРЕНСА НА TEST ПОДВЫБОРКЕ")
     print("="*60)
-    test_metrics.print_results()
+    print(f"Pixel Accuracy: {results['pixel_accuracy']:.4f}")
+    print(f"Mean Dice (без фона): {results['mean_dice']:.4f}")
+    print(f"Mean IoU (без фона): {results['mean_iou']:.4f}")
+    print(f"Mean Dice (с фоном): {results['mean_dice_with_bg']:.4f}")
+    print(f"Mean IoU (с фоном): {results['mean_iou_with_bg']:.4f}")
+    print(f"mAP@0.5: {results['map50']:.4f}")
+    print(f"mAP@0.5:0.95: {results['map50_95']:.4f}")
+    print(f"F1 (Macro): {results['f1_macro']:.4f}")
+    print(f"F1 (Micro): {results['f1_micro']:.4f}")
+    print(f"Precision (Macro): {results['precision_macro']:.4f}")
+    print(f"Recall (Macro): {results['recall_macro']:.4f}")
+    print(f"Precision (Micro): {results['precision_micro']:.4f}")
+    print(f"Recall (Micro): {results['recall_micro']:.4f}")
+    
+    # Вывод метрик по классам
+    print("\nПо классам (только классы с данными):")
+    for class_name in class_names:
+        dice = results['class_dice'].get(class_name, 0.0)
+        iou = results['class_iou'].get(class_name, 0.0)
+        f1 = results['class_f1'].get(class_name, 0.0)
+        precision = results['class_precision'].get(class_name, 0.0)
+        recall = results['class_recall'].get(class_name, 0.0)
+        
+        # Выводим только классы с данными
+        if dice > 0 or iou > 0:
+            print(f"{class_name}: Dice={dice:.4f}, IoU={iou:.4f}, F1={f1:.4f}, "
+                  f"Precision={precision:.4f}, Recall={recall:.4f}")
+    
     print("="*60)
 
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
         
-        # Сохраняем метрики
+        # Сохраняем метрики в JSON
         metrics_path = os.path.join(save_dir, 'test_metrics.json')
+        metrics_to_save = {}
+        for k, v in results.items():
+            if isinstance(v, dict):
+                metrics_to_save[k] = {str(key): float(val) if isinstance(val, (np.floating, np.integer)) else val 
+                                     for key, val in v.items()}
+            elif isinstance(v, (np.floating, np.integer)):
+                metrics_to_save[k] = float(v)
+            else:
+                metrics_to_save[k] = v
+        
         with open(metrics_path, 'w') as f:
-            json.dump({k: float(v) if isinstance(v, (np.floating, np.integer)) else v 
-                      for k, v in results.items() if not isinstance(v, dict)}, f, indent=2)
+            json.dump(metrics_to_save, f, indent=2)
+        print(f"Метрики сохранены в: {metrics_path}")
+        
+        # Визуализация примеров предсказаний
+        if len(sample_images) > 0:
+            viz_path = os.path.join(save_dir, 'test_predictions_visualization.png')
+            visualize_predictions(sample_images[:8], sample_masks[:8], sample_predictions[:8], 
+                                class_names, viz_path)
+            print(f"Визуализация сохранена в: {viz_path}")
+        
+        # Сохраняем детальный отчет
+        report_path = os.path.join(save_dir, 'test_report.txt')
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write("="*60 + "\n")
+            f.write("РЕЗУЛЬТАТЫ ИНФЕРЕНСА НА TEST ПОДВЫБОРКЕ\n")
+            f.write("="*60 + "\n\n")
+            f.write(f"Pixel Accuracy: {results['pixel_accuracy']:.4f}\n")
+            f.write(f"Mean Dice (без фона): {results['mean_dice']:.4f}\n")
+            f.write(f"Mean IoU (без фона): {results['mean_iou']:.4f}\n")
+            f.write(f"Mean Dice (с фоном): {results['mean_dice_with_bg']:.4f}\n")
+            f.write(f"Mean IoU (с фоном): {results['mean_iou_with_bg']:.4f}\n")
+            f.write(f"mAP@0.5: {results['map50']:.4f}\n")
+            f.write(f"mAP@0.5:0.95: {results['map50_95']:.4f}\n")
+            f.write(f"F1 (Macro): {results['f1_macro']:.4f}\n")
+            f.write(f"F1 (Micro): {results['f1_micro']:.4f}\n")
+            f.write(f"Precision (Macro): {results['precision_macro']:.4f}\n")
+            f.write(f"Recall (Macro): {results['recall_macro']:.4f}\n")
+            f.write(f"Precision (Micro): {results['precision_micro']:.4f}\n")
+            f.write(f"Recall (Micro): {results['recall_micro']:.4f}\n\n")
+            
+            f.write("По классам (только классы с данными):\n")
+            for class_name in class_names:
+                dice = results['class_dice'].get(class_name, 0.0)
+                iou = results['class_iou'].get(class_name, 0.0)
+                f1 = results['class_f1'].get(class_name, 0.0)
+                precision = results['class_precision'].get(class_name, 0.0)
+                recall = results['class_recall'].get(class_name, 0.0)
+                
+                if dice > 0 or iou > 0:
+                    f.write(f"{class_name}: Dice={dice:.4f}, IoU={iou:.4f}, F1={f1:.4f}, "
+                           f"Precision={precision:.4f}, Recall={recall:.4f}\n")
+            
+            f.write("="*60 + "\n")
+        
+        print(f"Детальный отчет сохранен в: {report_path}\n")
+        print(f"Инференс завершен! Результаты сохранены в: {save_dir}")
 
     return results
 
+def visualize_predictions(images, masks, predictions, class_names, save_path):
+    """Визуализирует примеры предсказаний"""
+    n_samples = min(len(images), 8)
+    fig, axes = plt.subplots(n_samples, 3, figsize=(12, 3*n_samples))
+    
+    if n_samples == 1:
+        axes = axes.reshape(1, -1)
+    
+    for idx in range(n_samples):
+        # Оригинальное изображение
+        img = images[idx].squeeze().numpy()
+        axes[idx, 0].imshow(img, cmap='gray')
+        axes[idx, 0].set_title('Изображение')
+        axes[idx, 0].axis('off')
+        
+        # Ground truth маска
+        mask = masks[idx].numpy()
+        axes[idx, 1].imshow(mask, cmap='tab20', vmin=0, vmax=len(class_names)-1)
+        axes[idx, 1].set_title('Ground Truth')
+        axes[idx, 1].axis('off')
+        
+        # Предсказанная маска
+        pred = predictions[idx].numpy()
+        axes[idx, 2].imshow(pred, cmap='tab20', vmin=0, vmax=len(class_names)-1)
+        axes[idx, 2].set_title('Предсказание')
+        axes[idx, 2].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
 def inference_single_image(model_path, image_path, data_yaml_path, transform, output_dir='output', device='cuda'):
     """Инференс на одном изображении"""
-    output_dir = Path(output_dir)
+    if isinstance(output_dir, str):
+        output_dir = Path(output_dir)
+    
     output_dir.mkdir(exist_ok=True)
 
-    # Загружаем конфигурацию
+    # Загружаем конфигурацию датасета
     with open(data_yaml_path, 'r') as f:
         config = yaml.safe_load(f)
 
     num_classes = config['nc'] + 1
     class_names = ['Background'] + config['names']
 
+    print(f"Количество классов: {num_classes}")
+    print("Имена классов:", class_names)
+
     # Загружаем модель
+    print("Загрузка модели...")
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     
     architecture = checkpoint.get('architecture', 'unetplusplus')
@@ -872,12 +991,15 @@ def inference_single_image(model_path, image_path, data_yaml_path, transform, ou
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
 
-    # Загружаем изображение
+    # Предобработка изображения
+    print("Предобработка изображения...")
     image = cv2.imread(str(image_path), cv2.IMREAD_GRAYSCALE)
+    if image is None:
+        raise ValueError(f"Не удалось загрузить изображение: {image_path}")
+    
     original_h, original_w = image.shape
     original_image = image.copy()
 
-    # Предобработка
     image_resized = cv2.resize(image, (512, 512))
     if len(image_resized.shape) == 2:
         image_resized = np.expand_dims(image_resized, axis=2)
@@ -886,43 +1008,251 @@ def inference_single_image(model_path, image_path, data_yaml_path, transform, ou
     image_tensor = transformed['image'].unsqueeze(0).to(device)
 
     # Инференс
+    print("Выполнение инференса...")
     with torch.no_grad():
         output = model(image_tensor)
 
-    # Постобработка
+    # Постобработка маски
+    print("Постобработка маски...")
     mask_pred = torch.softmax(output, dim=1)
     mask_pred = torch.argmax(mask_pred, dim=1).squeeze().cpu().numpy().astype(np.uint8)
     mask = cv2.resize(mask_pred, (original_w, original_h), interpolation=cv2.INTER_NEAREST)
 
-    # Сохраняем результаты
+    # Визуализация результатов
+    print("Визуализация результатов...")
     image_name = Path(image_path).stem
+    save_path = output_dir / f'{image_name}_result.png'
+    
+    result_image = visualize_inference_results(original_image, mask, class_names, save_path)
+
+    # Сохраняем маску отдельно
     mask_save_path = output_dir / f'{image_name}_mask.png'
     plt.imsave(mask_save_path, mask, cmap='tab20')
 
-    print(f"Маска сохранена в: {mask_save_path}")
+    # Сохраняем результат с наложением
+    result_save_path = output_dir / f'{image_name}_overlay.png'
+    cv2.imwrite(str(result_save_path), cv2.cvtColor(result_image, cv2.COLOR_RGB2BGR))
 
-    return mask, original_image
+    print(f"Маска сохранена в: {mask_save_path}")
+    print(f"Результат с наложением сохранен в: {result_save_path}")
+
+    # Выводим статистику по классам
+    unique_classes = np.unique(mask)
+    print("\nОбнаруженные классы:")
+    for class_id in unique_classes:
+        if class_id < len(class_names):
+            class_name = class_names[class_id]
+            pixel_count = np.sum(mask == class_id)
+            print(f"  {class_name} (ID: {class_id}): {pixel_count} пикселей")
+
+    return mask, result_image
+
+def visualize_inference_results(original_image, mask, class_names, save_path=None):
+    """Визуализация результатов сегментации"""
+    # Создаем цветную маску
+    colored_mask = create_colored_mask(mask, class_names)
+
+    # Накладываем маску на оригинальное изображение
+    if len(original_image.shape) == 2:
+        original_rgb = cv2.cvtColor(original_image, cv2.COLOR_GRAY2RGB)
+    else:
+        original_rgb = original_image
+
+    # Смешиваем изображение с маской
+    alpha = 0.6
+    blended = cv2.addWeighted(original_rgb, 1 - alpha, colored_mask, alpha, 0)
+
+    # Добавляем подписи классов
+    result_with_labels = add_class_labels(blended, mask, class_names)
+
+    # Создаем фигуру для отображения
+    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+
+    # Оригинальное изображение
+    if len(original_image.shape) == 2:
+        axes[0, 0].imshow(original_image, cmap='gray')
+    else:
+        axes[0, 0].imshow(cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB))
+    axes[0, 0].set_title('Оригинальное изображение')
+    axes[0, 0].axis('off')
+
+    # Предсказанная маска
+    axes[0, 1].imshow(mask, cmap='tab20')
+    axes[0, 1].set_title('Предсказанная маска')
+    axes[0, 1].axis('off')
+
+    # Цветная маска
+    axes[1, 0].imshow(colored_mask)
+    axes[1, 0].set_title('Цветная маска')
+    axes[1, 0].axis('off')
+
+    # Результат с наложением и подписями
+    axes[1, 1].imshow(cv2.cvtColor(result_with_labels, cv2.COLOR_BGR2RGB))
+    axes[1, 1].set_title('Результат сегментации с подписями')
+    axes[1, 1].axis('off')
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Результат сохранен в: {save_path}")
+
+    plt.show()
+
+    return result_with_labels
+
+def create_colored_mask(mask, class_names, alpha=0.7):
+    """Создание цветной маски с разными цветами для каждого класса"""
+    num_classes = len(class_names)
+
+    # Используем фиксированную палитру
+    colors = [
+        [0, 0, 0],        # 0: фон - черный
+        [255, 0, 0],      # 1: красный
+        [0, 255, 0],      # 2: зеленый
+        [0, 0, 255],      # 3: синий
+        [255, 255, 0],    # 4: желтый
+        [255, 0, 255],    # 5: пурпурный
+        [0, 255, 255],    # 6: голубой
+        [255, 165, 0],    # 7: оранжевый
+        [128, 0, 128],    # 8: фиолетовый
+        [165, 42, 42],    # 9: коричневый
+        [128, 128, 128],  # 10: серый
+        [255, 192, 203],  # 11: розовый
+        [0, 128, 0],      # 12: темно-зеленый
+        [0, 0, 128],      # 13: темно-синий
+        [128, 0, 0],      # 14: темно-красный
+        [128, 128, 0],    # 15: оливковый
+        [0, 128, 128],    # 16: бирюзовый
+        [128, 0, 128],    # 17: фиолетовый
+        [192, 192, 192],  # 18: серебряный
+        [64, 64, 64],     # 19: темно-серый
+        [255, 165, 0],    # 20: оранжевый
+        [210, 180, 140],  # 21: танг
+        [32, 178, 170],   # 22: светло-морской
+        [135, 206, 235],  # 23: небесно-голубой
+        [221, 160, 221],  # 24: сливовый
+        [240, 230, 140],  # 25: хаки
+        [245, 222, 179],  # 26: пшеничный
+        [255, 228, 196],  # 27: бисквитный
+        [240, 255, 240],  # 28: медовый
+        [245, 245, 220],  # 29: бежевый
+        [255, 250, 250],  # 30: снежный
+        [47, 79, 79],     # 31: темный грифельно-серый
+        [105, 105, 105]   # 32: димгрей
+    ]
+
+    # Дублируем цвета если классов больше
+    while len(colors) < num_classes:
+        colors.extend(colors)
+
+    # Создаем цветное изображение
+    colored_mask = np.zeros((mask.shape[0], mask.shape[1], 3), dtype=np.uint8)
+
+    for class_id in range(num_classes):
+        class_mask = mask == class_id
+        color = colors[class_id]
+        colored_mask[class_mask] = color
+
+    return colored_mask
+
+def add_class_labels(image, mask, class_names, min_area=100):
+    """Добавление подписей классов на изображение"""
+    result_image = image.copy()
+
+    for class_id, class_name in enumerate(class_names):
+        if class_id == 0:  # Пропускаем фон
+            continue
+
+        # Создаем маску для текущего класса
+        class_mask = (mask == class_id).astype(np.uint8)
+
+        # Находим контуры
+        contours, _ = cv2.findContours(class_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for contour in contours:
+            # Фильтруем по площади
+            area = cv2.contourArea(contour)
+            if area < min_area:
+                continue
+
+            # Находим ограничивающий прямоугольник
+            x, y, w, h = cv2.boundingRect(contour)
+
+            # Добавляем текст в центре прямоугольника
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.6
+            thickness = 2
+
+            # Получаем размеры текста
+            text_size = cv2.getTextSize(class_name, font, font_scale, thickness)[0]
+
+            # Вычисляем позицию текста
+            text_x = x + w // 2 - text_size[0] // 2
+            text_y = y + h // 2 + text_size[1] // 2
+
+            # Рисуем черный фон для текста
+            cv2.rectangle(result_image,
+                        (text_x - 2, text_y - text_size[1] - 2),
+                        (text_x + text_size[0] + 2, text_y + 2),
+                        (0, 0, 0), -1)
+
+            # Рисуем белый текст
+            cv2.putText(result_image, class_name,
+                      (text_x, text_y),
+                      font, font_scale, (255, 255, 255), thickness)
+
+    return result_image
 
 def inference_multiple_images(model_path, image_dir, data_yaml_path, transform, output_dir='output', device='cuda'):
-    """Инференс на нескольких изображениях"""
+    """Инференс на нескольких изображениях в директории"""
     image_dir = Path(image_dir)
-    output_dir = Path(output_dir)
+    if isinstance(output_dir, str):
+        output_dir = Path(output_dir)
 
-    image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
+    # Проверяем существование директории
+    if not image_dir.exists():
+        raise FileNotFoundError(f"Директория {image_dir} не существует")
+
+    # Получаем список всех файлов изображений
+    image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG', '*.bmp', '*.BMP']
     image_files = []
 
     for extension in image_extensions:
         image_files.extend(image_dir.glob(f"**/{extension}"))
 
+    # Если в корневой директории нет файлов, ищем без поддиректорий
+    if len(image_files) == 0:
+        for extension in image_extensions:
+            image_files.extend(image_dir.glob(extension))
+
+    # Удаляем дубликаты и сортируем
     image_files = sorted(list(set(image_files)))
-    print(f"Найдено {len(image_files)} изображений")
+
+    print(f"Найдено {len(image_files)} изображений в директории {image_dir}")
+
+    # Выводим список найденных файлов
+    if len(image_files) == 0:
+        print("Содержимое директории:")
+        for item in image_dir.iterdir():
+            print(f"  {item.name} (директория: {item.is_dir()})")
+    else:
+        print("Первые 10 найденных изображений:")
+        for img_path in image_files[:10]:
+            print(f"  {img_path}")
+        if len(image_files) > 10:
+            print(f"  ... и еще {len(image_files) - 10} изображений")
 
     masks = []
     results = []
 
     for image_path in image_files:
-        print(f"\nОбработка: {image_path.name}")
+        print(f"\n{'='*50}")
+        print(f"Обработка изображения: {image_path.name}")
+        print(f"{'='*50}")
+
         try:
+            # Создаем поддиректорию для каждого изображения
             img_output_dir = output_dir / image_path.stem
             img_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -932,8 +1262,13 @@ def inference_multiple_images(model_path, image_dir, data_yaml_path, transform, 
             masks.append(mask)
             results.append(result)
             print(f"✓ Успешно обработано: {image_path.name}")
-        except Exception as e:
-            print(f"✗ Ошибка: {e}")
 
-    print(f"\nОбработано: {len(masks)} из {len(image_files)} изображений")
+        except Exception as e:
+            print(f"✗ Ошибка при обработке {image_path}: {e}")
+            traceback.print_exc()
+
+    print(f"\n{'='*50}")
+    print(f"Обработка завершена. Успешно обработано: {len(masks)} из {len(image_files)} изображений")
+    print(f"{'='*50}")
+
     return masks, results
