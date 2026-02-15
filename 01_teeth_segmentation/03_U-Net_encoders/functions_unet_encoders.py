@@ -106,7 +106,7 @@ def create_model(architecture, encoder_name, encoder_weights, in_channels, class
     
     return model
 
-### Датасет (идентичен оригинальному) ###
+### Датасет ###
 
 class TeethSegmentationDataset(Dataset):
     def __init__(self, data_dir, img_size, split='train', transform=None):
@@ -245,7 +245,7 @@ class TeethSegmentationDataset(Dataset):
 
         return torch.FloatTensor(weights)
 
-### Loss Functions (идентичны оригинальным) ###
+### Loss Functions ###
 
 class DiceLoss(nn.Module):
     def __init__(self, smooth=1e-6):
@@ -334,10 +334,7 @@ def get_loss_function(loss_type='combined', num_classes=33, class_weights=None,
     else:
         raise ValueError(f"Неизвестный тип функции потерь: {loss_type}")
 
-### Метрики (идентичны оригинальным, импортируем из functions_unet.py) ###
-
-# Импортируем все метрики и вспомогательные функции из оригинального файла
-# Они идентичны для обеих реализаций
+### Метрики  ###
 
 def dice_coefficient(pred, target, num_classes, smooth=1e-6, exclude_background=False):
     target = target.long().to(pred.device)
@@ -547,9 +544,154 @@ class SegmentationMetrics:
         print(f"mAP@0.5: {results['map50']:.4f}")
         print(f"mAP@0.5:0.95: {results['map50_95']:.4f}")
 
+def calculate_map_segmentation(pred, target, num_classes, iou_thresholds=[0.5], exclude_background=True):
+    """
+    Вычисляет mAP для сегментации на основе IoU thresholds
+    Args:
+        pred: предсказания модели [B, C, H, W]
+        target: истинные маски [B, H, W]
+        num_classes: количество классов
+        iou_thresholds: список IoU порогов для вычисления AP
+        exclude_background: исключить фон (класс 0) из расчета
+    Returns:
+        dict: словарь с mAP метриками для каждого порога
+    """
+    if pred.dim() != 4 or target.dim() != 3:
+        raise ValueError(f"Ожидаемые размерности: pred [B,C,H,W], target [B,H,W]. Получено: pred {pred.shape}, target {target.shape}")
+
+    target = target.long().to(pred.device)
+
+    if target.min() < 0 or target.max() >= num_classes:
+        raise ValueError(f"Значения target должны быть в диапазоне [0, {num_classes-1}]. Получено: [{target.min()}, {target.max()}]")
+
+    pred_softmax = F.softmax(pred, dim=1)
+
+    start_cls = 1 if exclude_background else 0
+    classes_to_analyze = list(range(start_cls, num_classes))
+
+    results = {}
+
+    for threshold in iou_thresholds:
+        class_aps = []
+
+        for cls in classes_to_analyze:
+            pred_probs = pred_softmax[:, cls]
+            target_binary = (target == cls).float()
+
+            if target_binary.sum() == 0:
+                continue
+
+            ap = calculate_ap_for_class(pred_probs, target_binary, threshold)
+            class_aps.append(ap)
+
+        if class_aps:
+            mean_ap = np.mean(class_aps)
+        else:
+            mean_ap = 0.0
+
+        results[f'mAP@{threshold}'] = mean_ap
+
+    return results
+
+def calculate_ap_for_class(pred_probs, target_binary, iou_threshold):
+    """
+    Вычисляет Average Precision для одного класса при заданном IoU threshold
+    Args:
+        pred_probs: вероятности предсказания [B, H, W]
+        target_binary: бинарная маска истинных значений [B, H, W]
+        iou_threshold: порог IoU для считания предсказания правильным
+    Returns:
+        float: Average Precision
+    """
+    batch_size = pred_probs.shape[0]
+
+    all_scores = []
+    all_ious = []
+    all_targets = []
+
+    for b in range(batch_size):
+        pred_prob = pred_probs[b]
+        target_mask = target_binary[b]
+
+        if target_mask.sum() == 0:
+            continue
+
+        prob_thresholds = torch.linspace(0.3, 0.7, 5).to(pred_prob.device)
+
+        for prob_thresh in prob_thresholds:
+            pred_binary = (pred_prob > prob_thresh).float()
+
+            intersection = (pred_binary * target_mask).sum()
+            union = pred_binary.sum() + target_mask.sum() - intersection
+
+            if union > 0:
+                iou = intersection / union
+            else:
+                iou = 1.0 if (pred_binary.sum() == 0 and target_mask.sum() == 0) else 0.0
+
+            all_scores.append(pred_prob.max().item())
+            all_ious.append(iou.item())
+            all_targets.append(1.0)
+
+    if not all_scores:
+        return 0.0
+
+    sorted_indices = np.argsort(all_scores)[::-1]
+    sorted_ious = np.array(all_ious)[sorted_indices]
+
+    tp = (sorted_ious >= iou_threshold).astype(float)
+    fp = (sorted_ious < iou_threshold).astype(float)
+
+    tp_cumsum = np.cumsum(tp)
+    fp_cumsum = np.cumsum(fp)
+
+    recalls = tp_cumsum / len(all_targets) if len(all_targets) > 0 else np.array([0])
+    precisions = tp_cumsum / (tp_cumsum + fp_cumsum + 1e-8)
+
+    ap = compute_ap(recalls, precisions)
+
+    return ap
+
+def compute_ap(recalls, precisions):
+    """Вычисляет Average Precision по кривой precision-recall"""
+    recalls = np.concatenate(([0], recalls, [1]))
+    precisions = np.concatenate(([0], precisions, [0]))
+
+    for i in range(len(precisions) - 2, -1, -1):
+        precisions[i] = max(precisions[i], precisions[i + 1])
+
+    indices = np.where(recalls[1:] != recalls[:-1])[0] + 1
+
+    ap = np.sum((recalls[indices] - recalls[indices - 1]) * precisions[indices])
+
+    return ap
+
 def calculate_map50_map95(pred, target, num_classes, exclude_background=True):
-    """Упрощенная версия для быстрого вычисления"""
-    return {'mAP50': 0.0, 'mAP50_95': 0.0}
+    """
+    Вычисляет mAP@0.5 и mAP@0.5:0.95 для сегментации (оптимизированная версия)
+    Args:
+        pred: предсказания модели [B, C, H, W]
+        target: истинные маски [B, H, W]
+        num_classes: количество классов
+        exclude_background: исключить фон из расчета
+    Returns:
+        dict: {'mAP50': float, 'mAP50_95': float}
+    """
+    # mAP@0.5
+    map50_result = calculate_map_segmentation(pred, target, num_classes, [0.5], exclude_background)
+    map50 = map50_result.get('mAP@0.5', 0.0)
+
+    # mAP@0.5:0.95 (уменьшенное количество порогов для ускорения)
+    iou_thresholds = [0.5, 0.6, 0.7, 0.8, 0.9]
+    map50_95_result = calculate_map_segmentation(pred, target, num_classes, iou_thresholds, exclude_background)
+
+    all_maps = [map50_95_result.get(f'mAP@{thresh}', 0.0) for thresh in iou_thresholds]
+    map50_95 = np.mean(all_maps)
+
+    return {
+        'mAP50': map50,
+        'mAP50_95': map50_95
+    }
 
 ### Загрузка чекпоинта ###
 
