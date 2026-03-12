@@ -128,6 +128,7 @@ Combined Loss = 1.0 * CE + 1.0 * DiceLoss + 0.5 * FocalLoss.
   - Accuracy: 0.9764
   - Precision (micro / macro): 0.9764 / 0.9047 
   - Recall (micro / macro): 0.9764 / 0.9369 
+
 Графики обучения финальной модели:
 ![](images/all_metrics_summary.png)
 

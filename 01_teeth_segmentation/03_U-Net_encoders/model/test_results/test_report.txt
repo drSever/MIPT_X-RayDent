@@ -1,0 +1,53 @@
+============================================================
+РЕЗУЛЬТАТЫ ИНФЕРЕНСА НА TEST ПОДВЫБОРКЕ
+============================================================
+
+Pixel Accuracy: 0.9785
+Mean Dice (без фона): 0.9272
+Mean IoU (без фона): 0.8645
+Mean Dice (с фоном): 0.9291
+Mean IoU (с фоном): 0.8681
+mAP@0.5: 0.9702
+mAP@0.5:0.95: 0.7990
+F1 (Macro): 0.9272
+F1 (Micro): 0.9785
+Precision (Macro): 0.9142
+Recall (Macro): 0.9407
+Precision (Micro): 0.9785
+Recall (Micro): 0.9785
+
+По классам (только классы с данными):
+Background: Dice=0.9907, IoU=0.9816, F1=0.9907, Precision=0.9941, Recall=0.9874
+11: Dice=0.9333, IoU=0.8750, F1=0.9333, Precision=0.9220, Recall=0.9449
+12: Dice=0.9252, IoU=0.8608, F1=0.9252, Precision=0.9145, Recall=0.9361
+13: Dice=0.9068, IoU=0.8296, F1=0.9068, Precision=0.9063, Recall=0.9073
+14: Dice=0.9060, IoU=0.8281, F1=0.9060, Precision=0.8973, Recall=0.9149
+15: Dice=0.9080, IoU=0.8316, F1=0.9080, Precision=0.8916, Recall=0.9251
+16: Dice=0.9209, IoU=0.8535, F1=0.9209, Precision=0.9085, Recall=0.9338
+17: Dice=0.9219, IoU=0.8551, F1=0.9219, Precision=0.9040, Recall=0.9405
+18: Dice=0.9199, IoU=0.8517, F1=0.9199, Precision=0.9095, Recall=0.9306
+21: Dice=0.9376, IoU=0.8825, F1=0.9376, Precision=0.9257, Recall=0.9497
+22: Dice=0.9312, IoU=0.8712, F1=0.9312, Precision=0.9206, Recall=0.9420
+23: Dice=0.9197, IoU=0.8514, F1=0.9197, Precision=0.9102, Recall=0.9295
+24: Dice=0.9196, IoU=0.8512, F1=0.9196, Precision=0.9122, Recall=0.9272
+25: Dice=0.9244, IoU=0.8594, F1=0.9244, Precision=0.9110, Recall=0.9382
+26: Dice=0.9397, IoU=0.8863, F1=0.9397, Precision=0.9292, Recall=0.9506
+27: Dice=0.9376, IoU=0.8825, F1=0.9376, Precision=0.9201, Recall=0.9557
+28: Dice=0.9364, IoU=0.8803, F1=0.9364, Precision=0.9277, Recall=0.9452
+31: Dice=0.9088, IoU=0.8328, F1=0.9088, Precision=0.8848, Recall=0.9342
+32: Dice=0.9138, IoU=0.8414, F1=0.9138, Precision=0.8957, Recall=0.9327
+33: Dice=0.9277, IoU=0.8652, F1=0.9277, Precision=0.9092, Recall=0.9471
+34: Dice=0.9158, IoU=0.8446, F1=0.9158, Precision=0.9033, Recall=0.9286
+35: Dice=0.9184, IoU=0.8492, F1=0.9184, Precision=0.9083, Recall=0.9288
+36: Dice=0.9414, IoU=0.8893, F1=0.9414, Precision=0.9320, Recall=0.9510
+37: Dice=0.9374, IoU=0.8821, F1=0.9374, Precision=0.9282, Recall=0.9467
+38: Dice=0.9346, IoU=0.8773, F1=0.9346, Precision=0.9100, Recall=0.9607
+41: Dice=0.9244, IoU=0.8594, F1=0.9244, Precision=0.9074, Recall=0.9420
+42: Dice=0.9310, IoU=0.8708, F1=0.9310, Precision=0.9120, Recall=0.9507
+43: Dice=0.9359, IoU=0.8795, F1=0.9359, Precision=0.9214, Recall=0.9509
+44: Dice=0.9272, IoU=0.8642, F1=0.9272, Precision=0.9119, Recall=0.9430
+45: Dice=0.9329, IoU=0.8743, F1=0.9329, Precision=0.9171, Recall=0.9493
+46: Dice=0.9526, IoU=0.9095, F1=0.9526, Precision=0.9377, Recall=0.9679
+47: Dice=0.9406, IoU=0.8878, F1=0.9406, Precision=0.9284, Recall=0.9530
+48: Dice=0.9400, IoU=0.8867, F1=0.9400, Precision=0.9369, Recall=0.9430
+============================================================
