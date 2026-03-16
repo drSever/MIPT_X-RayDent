@@ -261,7 +261,7 @@ class MaskRCNNInference:
         
         plt.show()
     
-    def predict_batch(self, image_dir, output_dir=None, extensions=['.jpg', '.png']):
+    def predict_batch(self, image_dir, output_dir=None, extensions=['.jpg', '.png', '.JPG', '.PNG']):
         """
         Предсказание на папке с изображениями
         
