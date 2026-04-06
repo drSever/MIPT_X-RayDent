@@ -56,54 +56,63 @@ class SegmentationMetrics:
         if isinstance(gt_classes, torch.Tensor):
             gt_classes = gt_classes.cpu().numpy()
 
-        # Создаем матрицу IoU между всеми предсказаниями и GT
-        iou_matrix = np.zeros((len(pred_masks), len(gt_masks)))
-        for i, pred_mask in enumerate(pred_masks):
-            for j, gt_mask in enumerate(gt_masks):
-                iou_matrix[i, j] = self._compute_iou(pred_mask, gt_mask)
-
-        # Сопоставление предсказаний с GT (жадный алгоритм, сортировка по убыванию IoU)
-        matched_gt = set()
+        matched_gt   = set()
         matched_pred = set()
 
-        matches = []
-        for i in range(len(pred_masks)):
-            for j in range(len(gt_masks)):
-                if iou_matrix[i, j] > 0:
-                    matches.append((iou_matrix[i, j], i, j))
-        matches.sort(reverse=True)
+        # Сопоставляем только внутри одного класса — это корректно и эффективно.
+        # Предсказание класса X может быть TP только с GT класса X.
+        for cls in np.unique(gt_classes):
+            pred_idx_cls = np.where(pred_classes == cls)[0]
+            gt_idx_cls   = np.where(gt_classes   == cls)[0]
 
-        for iou_val, pred_idx, gt_idx in matches:
-            if pred_idx in matched_pred or gt_idx in matched_gt:
+            if len(pred_idx_cls) == 0 or len(gt_idx_cls) == 0:
                 continue
 
-            pred_class = pred_classes[pred_idx]
-            gt_class   = gt_classes[gt_idx]
+            # Матрица IoU только для текущего класса
+            iou_mat = np.zeros((len(pred_idx_cls), len(gt_idx_cls)))
+            for i, pi in enumerate(pred_idx_cls):
+                for j, gi in enumerate(gt_idx_cls):
+                    pm = pred_masks[pi] if not isinstance(pred_masks, list) else pred_masks[pi]
+                    gm = gt_masks[gi]
+                    iou_mat[i, j] = self._compute_iou(pm, gm)
+            # Жадное сопоставление по убыванию IoU
+            pairs = sorted(
+                [(iou_mat[i, j], i, j) for i in range(len(pred_idx_cls))
+                 for j in range(len(gt_idx_cls)) if iou_mat[i, j] > 0],
+                reverse=True
+            )
+            matched_local_pred = set()
+            matched_local_gt   = set()
 
-            if iou_val >= iou_threshold and pred_class == gt_class:
-                # True Positive — классы совпали и IoU достаточен
-                self.tp[gt_class] += 1
-                matched_pred.add(pred_idx)
-                matched_gt.add(gt_idx)
+            for iou_val, i, j in pairs:
+                if i in matched_local_pred or j in matched_local_gt:
+                    continue
+                if iou_val >= iou_threshold:
+                    pi, gi = pred_idx_cls[i], gt_idx_cls[j]
+                    self.tp[cls] += 1
+                    matched_pred.add(pi)
+                    matched_gt.add(gi)
+                    matched_local_pred.add(i)
+                    matched_local_gt.add(j)
 
-                dice = self._compute_dice(pred_masks[pred_idx], gt_masks[gt_idx])
-                self.dice_scores[gt_class].append(dice)
-                self.iou_scores[gt_class].append(iou_val)
+                    dice = self._compute_dice(pred_masks[pi], gt_masks[gi])
+                    self.dice_scores[cls].append(dice)
+                    self.iou_scores[cls].append(iou_val)
 
-                intersection = np.logical_and(pred_masks[pred_idx], gt_masks[gt_idx]).sum()
-                union        = np.logical_or(pred_masks[pred_idx],  gt_masks[gt_idx]).sum()
-                self.intersection[gt_class] += intersection
-                self.union[gt_class]        += union
+                    intersection = np.logical_and(pred_masks[pi], gt_masks[gi]).sum()
+                    union        = np.logical_or(pred_masks[pi],  gt_masks[gi]).sum()
+                    self.intersection[cls] += intersection
+                    self.union[cls]        += union
 
-        # False Positives: несопоставленные предсказания -> FP по классу предсказания
+        # FP: несопоставленные предсказания → по классу предсказания
         for pred_idx in range(len(pred_masks)):
             if pred_idx not in matched_pred:
                 self.fp[pred_classes[pred_idx]] += 1
 
-        # False Negatives: несопоставленные GT -> FN по классу GT
+        # FN: несопоставленные GT → по классу GT
         for gt_idx in range(len(gt_masks)):
             if gt_idx not in matched_gt:
-                self.fn[gt_class] += 1
+                self.fn[gt_classes[gt_idx]] += 1
     
     def _compute_iou(self, mask1, mask2):
         """Вычисление IoU между двумя масками"""
@@ -381,11 +390,19 @@ def evaluate_model(
         # Предсказание
         outputs = predictor(img)
         instances = outputs["instances"].to("cpu")
+
+        # instances.image_size — размер после паддинга (кратный 32)
+        # pred_masks нужно обрезать до оригинального размера изображения
+        pred_h, pred_w = instances.image_size
         
         # Извлекаем предсказанные маски и классы (уже отфильтрованы по score_threshold)
         if len(instances) > 0:
-            pred_masks = instances.pred_masks.numpy()
-            pred_classes_contiguous = instances.pred_classes.numpy()  # contiguous_id от модели
+            # pred_masks уже в координатах оригинального изображения —
+            # detectron2 автоматически масштабирует их в postprocessing.
+            # instances.image_size — это размер после ресайза/паддинга,
+            # но pred_masks уже обратно спроецированы на оригинал.
+            pred_masks = instances.pred_masks.numpy()  # (N, H_orig, W_orig)
+            pred_classes_contiguous = instances.pred_classes.numpy()
             pred_scores = instances.scores.numpy()
             
             # Дополнительная проверка score threshold (на всякий случай)
@@ -424,22 +441,21 @@ def evaluate_model(
             gt_category_ids = []  # Для debug
             
             for anno in data["annotations"]:
-                # Проверяем валидность category_id
-                cat_id = anno.get("category_id", 0)
-                if cat_id < 1 or cat_id > num_classes:
-                    # Пропускаем невалидные аннотации
+                # Detectron2 хранит category_id в 0-based формате
+                cat_id = anno.get("category_id", -1)
+                if cat_id < 0 or cat_id >= num_classes:
                     continue
-                
+
                 # Конвертируем полигон в маску
                 if "segmentation" in anno:
                     segmentation = anno["segmentation"]
                     rles = mask_util.frPyObjects(segmentation, height, width)
                     rle = mask_util.merge(rles)
-                    mask = mask_util.decode(rle).astype(bool)
-                    
-                    gt_masks.append(mask)
-                    # category_id в COCO 1-based (1-32), конвертируем в 0-based (0-31)
-                    gt_class = cat_id - 1
+                    mask = mask_util.decode(rle).astype(np.uint8)
+
+                    gt_masks.append(mask.astype(bool))
+                    # category_id уже 0-based (0-31) — используем напрямую
+                    gt_class = cat_id
                     gt_classes.append(gt_class)
                     gt_category_ids.append(cat_id)
                     gt_class_counts[gt_class] += 1

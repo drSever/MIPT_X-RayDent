@@ -86,31 +86,22 @@ class MaskRCNNInference:
     def predict(self, image_path, score_threshold=None):
         """
         Предсказание на одном изображении
-        
+
         Args:
             image_path: путь к изображению
             score_threshold: порог уверенности (если None, использует из конфига)
-        
+
         Returns:
             outputs: результаты предсказания
             image: исходное изображение
         """
         image = cv2.imread(str(image_path))
-        
-        # Временно изменяем порог если указан
+
+        # Меняем порог напрямую в модели — это работает без пересоздания predictor
         if score_threshold is not None:
-            original_threshold = self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST
-            self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = score_threshold
-            # Пересоздаем predictor с новым порогом
-            self.predictor = DefaultPredictor(self.cfg)
-        
+            self.predictor.model.roi_heads.box_predictor.test_score_thresh = score_threshold
+
         outputs = self.predictor(image)
-        
-        # Восстанавливаем оригинальный порог
-        if score_threshold is not None:
-            self.cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = original_threshold
-            self.predictor = DefaultPredictor(self.cfg)
-        
         return outputs, image
     
     def visualize(self, image, outputs, show_boxes=True, show_masks=True, 
@@ -277,14 +268,16 @@ class MaskRCNNInference:
         
         plt.show()
     
-    def predict_batch(self, image_dir, output_dir=None, extensions=['.jpg', '.png', '.JPG', '.PNG']):
+    def predict_batch(self, image_dir, output_dir=None, extensions=['.jpg', '.png', '.JPG', '.PNG'],
+                      score_threshold=None):
         """
         Предсказание на папке с изображениями
-        
+
         Args:
             image_dir: директория с изображениями
             output_dir: директория для сохранения результатов
             extensions: расширения файлов изображений
+            score_threshold: порог уверенности (если None, использует из конфига)
         """
         image_dir = Path(image_dir)
         
@@ -301,7 +294,7 @@ class MaskRCNNInference:
         results = []
         for img_path in image_files:
             print(f"Обработка: {img_path.name}")
-            outputs, image = self.predict(img_path)
+            outputs, image = self.predict(img_path, score_threshold=score_threshold)
             
             if output_dir:
                 vis_image = self.visualize(image, outputs)
